@@ -12,14 +12,18 @@ import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.jackson2.JacksonFactory;
 import com.google.api.services.cloudkms.v1.CloudKMS;
 import com.google.api.services.cloudkms.v1.CloudKMSScopes;
+import com.google.api.services.cloudkms.v1.model.Binding;
 import com.google.api.services.cloudkms.v1.model.CryptoKey;
 import com.google.api.services.cloudkms.v1.model.DecryptRequest;
 import com.google.api.services.cloudkms.v1.model.DecryptResponse;
 import com.google.api.services.cloudkms.v1.model.EncryptRequest;
 import com.google.api.services.cloudkms.v1.model.EncryptResponse;
 import com.google.api.services.cloudkms.v1.model.KeyRing;
+import com.google.api.services.cloudkms.v1.model.Policy;
+import com.google.api.services.cloudkms.v1.model.SetIamPolicyRequest;
 import java.io.IOException;
-import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 /**
  *
@@ -32,13 +36,15 @@ public class GcloudKms {
 //        createKeyRing("appranix-dev-07", "global", "test2");
 //        createCryptoKey("appranix-dev-07", "global", "test2", "crpto-key");
 
+        addMemberToCryptoKeyPolicy("appranix-dev-07", "global", "test2", "crpto-key", "user:abdul@appranix.com", "roles/owner");
+
         String accessKey = "AKIAJCSC2H3IQ6I4Q3GQ";
         byte[] b = accessKey.getBytes();
         byte[] decodedCipherText = encrypt("appranix-dev-07", "global", "test2", "crpto-key", b);
         System.out.println("decodedCipherText: " + decodedCipherText);
-        
+
         byte[] plainText = decrypt("appranix-dev-07", "global", "test2", "crpto-key", decodedCipherText);
-        System.out.println("Plain text: "+new String(plainText));
+        System.out.println("Plain text: " + new String(plainText));
 
     }
 
@@ -160,6 +166,86 @@ public class GcloudKms {
                 .execute();
 
         return response.decodePlaintext();
+    }
+
+    /**
+     * Adds the given member to the given key, with the given role.
+     *
+     * @param projectId The id of the project.
+     * @param locationId The location id of the key.
+     * @param keyRingId The id of the keyring.
+     * @param cryptoKeyId The id of the crypto key.
+     * @param member The member to add. Must be in the proper format, eg:
+     *
+     * allUsers user:$userEmail serviceAccount:$serviceAccountEmail
+     *
+     * See https://g.co/cloud/kms/docs/reference/rest/v1/Policy#binding for more
+     * details.
+     * @param role Must be in one of the following formats: roles/[role]
+     * organizations/[organizationId]/roles/[role]
+     * projects/[projectId]/roles/[role]
+     *
+     * See https://g.co/cloud/iam/docs/understanding-roles for available values
+     * for [role].
+     */
+    public static Policy addMemberToCryptoKeyPolicy(
+            String projectId, String locationId, String keyRingId, String cryptoKeyId, String member,
+            String role)
+            throws IOException {
+        // Create the Cloud KMS client.
+        CloudKMS kms = createAuthorizedClient();
+
+        // The resource name of the cryptoKey version
+        String cryptoKey = String.format(
+                "projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s",
+                projectId, locationId, keyRingId, cryptoKeyId);
+
+        // Get the current IAM policy
+        Policy iamPolicy = getCryptoKeyPolicy(projectId, locationId, keyRingId, cryptoKeyId);
+
+        // Add the new account to it.
+        Binding newBinding = new Binding()
+                .setRole(role)
+                .setMembers(Collections.singletonList(member));
+        List<Binding> bindings = iamPolicy.getBindings();
+        if (null == bindings) {
+            bindings = Collections.singletonList(newBinding);
+        } else {
+            bindings.add(newBinding);
+        }
+        iamPolicy.setBindings(bindings);
+
+        // Set the new IAM Policy.
+        Policy newIamPolicy = kms.projects().locations().keyRings()
+                .cryptoKeys()
+                .setIamPolicy(cryptoKey, new SetIamPolicyRequest().setPolicy(iamPolicy))
+                .execute();
+
+        System.out.println("Response: " + newIamPolicy);
+        return newIamPolicy;
+    }
+
+    /**
+     * Retrieves the IAM policy for the given crypto key.
+     */
+    public static Policy getCryptoKeyPolicy(String projectId, String locationId, String keyRingId,
+            String cryptoKeyId)
+            throws IOException {
+        // Create the Cloud KMS client.
+        CloudKMS kms = createAuthorizedClient();
+
+        // The resource name of the cryptoKey
+        String cryptoKey = String.format(
+                "projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s",
+                projectId, locationId, keyRingId, cryptoKeyId);
+
+        // Get the current IAM policy and add the new account to it.
+        Policy iamPolicy = kms.projects().locations().keyRings().cryptoKeys()
+                .getIamPolicy(cryptoKey)
+                .execute();
+
+        System.out.println(iamPolicy.getBindings());
+        return iamPolicy;
     }
 
 }
