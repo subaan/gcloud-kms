@@ -1,0 +1,14 @@
+.classpath
+.gradle/
+.project
+.settings/
+bin/
+build/
+.history/
+/.gitignore
+/bcompare-4.2.8.23479_amd64.deb
+/gradlew
+/gradlew.bat
+/.sts4-cache/
+/gradle/
+/metadata.json
