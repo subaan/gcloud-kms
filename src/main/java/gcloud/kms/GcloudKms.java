@@ -14,12 +14,16 @@ import com.google.api.services.cloudkms.v1.CloudKMS;
 import com.google.api.services.cloudkms.v1.CloudKMSScopes;
 import com.google.api.services.cloudkms.v1.model.Binding;
 import com.google.api.services.cloudkms.v1.model.CryptoKey;
+import com.google.api.services.cloudkms.v1.model.CryptoKeyVersion;
+import com.google.api.services.cloudkms.v1.model.CryptoKeyVersionTemplate;
 import com.google.api.services.cloudkms.v1.model.DecryptRequest;
 import com.google.api.services.cloudkms.v1.model.DecryptResponse;
+import com.google.api.services.cloudkms.v1.model.DestroyCryptoKeyVersionRequest;
 import com.google.api.services.cloudkms.v1.model.EncryptRequest;
 import com.google.api.services.cloudkms.v1.model.EncryptResponse;
 import com.google.api.services.cloudkms.v1.model.KeyRing;
 import com.google.api.services.cloudkms.v1.model.Policy;
+import com.google.api.services.cloudkms.v1.model.RestoreCryptoKeyVersionRequest;
 import com.google.api.services.cloudkms.v1.model.SetIamPolicyRequest;
 import java.io.IOException;
 import java.util.Collections;
@@ -33,18 +37,22 @@ public class GcloudKms {
 
     public static void main(String[] args) throws Exception {
         // Create the Cloud KMS client.
-//        createKeyRing("appranix-dev-07", "global", "test2");
-//        createCryptoKey("appranix-dev-07", "global", "test2", "crpto-key");
+//        createKeyRing("appranix-dev-07", "global", "dev-key-ring");
+//        createCryptoKey("appranix-dev-07", "global", "dev-key-ring", "crypto-key");
 
-        addMemberToCryptoKeyPolicy("appranix-dev-07", "global", "test2", "crpto-key", "user:abdul@appranix.com", "roles/owner");
-
-        String accessKey = "AKIAJCSC2H3IQ6I4Q3GQ";
-        byte[] b = accessKey.getBytes();
-        byte[] decodedCipherText = encrypt("appranix-dev-07", "global", "test2", "crpto-key", b);
-        System.out.println("decodedCipherText: " + decodedCipherText);
-
-        byte[] plainText = decrypt("appranix-dev-07", "global", "test2", "crpto-key", decodedCipherText);
-        System.out.println("Plain text: " + new String(plainText));
+//        addMemberToCryptoKeyPolicy("appranix-dev-07", "global", "dev-key-ring", "crypto-key", "user:abdul@appranix.com", "roles/owner");
+//  
+//
+//        String accessKey = "AKIAJCSC2H3IQ6I4Q3GQ";
+//        byte[] b = accessKey.getBytes();
+//        byte[] decodedCipherText = encrypt("appranix-dev-07", "global", "dev-key-ring", "crypto-key", b);
+//        System.out.println("decodedCipherText: " + decodedCipherText);
+//
+//        byte[] plainText = decrypt("appranix-dev-07", "global", "dev-key-ring", "crypto-key", decodedCipherText);
+//        System.out.println("Plain text: " + new String(plainText));
+        
+//        destroyCryptoKeyVersion("appranix-dev-07", "global", "test", "quickstart", "1");
+//        restoreCryptoKeyVersion("appranix-dev-07", "global", "test", "quickstart", "1");
 
     }
 
@@ -76,9 +84,15 @@ public class GcloudKms {
                 .build();
     }
 
-//    /**
-// * Creates a new key ring with the given id.
-// */
+    /**
+     * Creates a new key ring with the given id.
+     *
+     * @param projectId
+     * @param locationId
+     * @param keyRingId
+     * @return
+     * @throws IOException
+     */
     public static KeyRing createKeyRing(String projectId, String locationId, String keyRingId)
             throws IOException {
         // Create the Cloud KMS client.
@@ -113,6 +127,47 @@ public class GcloudKms {
         String purpose = "ENCRYPT_DECRYPT";
         CryptoKey cryptoKey = new CryptoKey();
         cryptoKey.setPurpose(purpose);
+        CryptoKeyVersionTemplate cryptoKeyVersionTemplate = new CryptoKeyVersionTemplate();
+        cryptoKeyVersionTemplate.setAlgorithm("asymmetric-signing");
+        cryptoKeyVersionTemplate.setAlgorithm("rsa-sign-pss-2048-sha256");
+        cryptoKeyVersionTemplate.setProtectionLevel("software");
+        cryptoKey.setVersionTemplate(cryptoKeyVersionTemplate);  
+       
+//        cryptoKey.setRotationPeriod("30d"); // INTEGER[UNIT], where units can be one of seconds (s), minutes (m), hours (h) or days (d). ex.30d
+
+        // Create the CryptoKey for your project.
+        CryptoKey createdKey = kms.projects().locations().keyRings().cryptoKeys()
+                .create(parent, cryptoKey)
+                .setCryptoKeyId(cryptoKeyId)
+                .execute();
+
+        System.out.println(createdKey);
+        return createdKey;
+    }
+    
+    /**
+     * Creates a new asymmetric key with the given id.
+     */
+    public static CryptoKey createAsymmetricKey(String projectId, String locationId, String keyRingId,
+            String cryptoKeyId)
+            throws IOException {
+        // Create the Cloud KMS client.
+        CloudKMS kms = createAuthorizedClient();
+
+        // The resource name of the location associated with the KeyRing.
+        String parent = String.format(
+                "projects/%s/locations/%s/keyRings/%s", projectId, locationId, keyRingId);
+
+        // This will allow the API access to the key for encryption and decryption.
+        String purpose = "asymmetric-signing";
+        CryptoKey cryptoKey = new CryptoKey();
+        cryptoKey.setPurpose(purpose);
+        CryptoKeyVersionTemplate cryptoKeyVersionTemplate = new CryptoKeyVersionTemplate();
+        cryptoKeyVersionTemplate.setAlgorithm("rsa-sign-pss-2048-sha256");
+        cryptoKeyVersionTemplate.setProtectionLevel("software");
+        cryptoKey.setVersionTemplate(cryptoKeyVersionTemplate);  
+       
+//        cryptoKey.setRotationPeriod("30d"); // INTEGER[UNIT], where units can be one of seconds (s), minutes (m), hours (h) or days (d). ex.30d
 
         // Create the CryptoKey for your project.
         CryptoKey createdKey = kms.projects().locations().keyRings().cryptoKeys()
@@ -166,6 +221,58 @@ public class GcloudKms {
                 .execute();
 
         return response.decodePlaintext();
+    }
+
+    /**
+     * Marks the given version of a crypto key to be destroyed at a scheduled
+     * future point.
+     */
+    public static CryptoKeyVersion destroyCryptoKeyVersion(
+            String projectId, String locationId, String keyRingId, String cryptoKeyId, String version)
+            throws IOException {
+        // Create the Cloud KMS client.
+        CloudKMS kms = createAuthorizedClient();
+
+        // The resource name of the cryptoKey version
+        String cryptoKeyVersion = String.format(
+                "projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s/cryptoKeyVersions/%s",
+                projectId, locationId, keyRingId, cryptoKeyId, version);
+
+        DestroyCryptoKeyVersionRequest destroyRequest = new DestroyCryptoKeyVersionRequest();
+
+        CryptoKeyVersion destroyed = kms.projects().locations().keyRings().cryptoKeys()
+                .cryptoKeyVersions()
+                .destroy(cryptoKeyVersion, destroyRequest)
+                .execute();
+
+        System.out.println(destroyed);
+        return destroyed;
+    }
+
+    /**
+     * Restores the given version of a crypto key that is currently scheduled
+     * for destruction.
+     */
+    public static CryptoKeyVersion restoreCryptoKeyVersion(
+            String projectId, String locationId, String keyRingId, String cryptoKeyId, String version)
+            throws IOException {
+        // Create the Cloud KMS client.
+        CloudKMS kms = createAuthorizedClient();
+
+        // The resource name of the cryptoKey version
+        String cryptoKeyVersion = String.format(
+                "projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s/cryptoKeyVersions/%s",
+                projectId, locationId, keyRingId, cryptoKeyId, version);
+
+        RestoreCryptoKeyVersionRequest restoreRequest = new RestoreCryptoKeyVersionRequest();
+
+        CryptoKeyVersion restored = kms.projects().locations().keyRings().cryptoKeys()
+                .cryptoKeyVersions()
+                .restore(cryptoKeyVersion, restoreRequest)
+                .execute();
+
+        System.out.println(restored);
+        return restored;
     }
 
     /**
