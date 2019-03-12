@@ -7,4 +7,7 @@ repositories {
 dependencies {
     compile 'com.google.apis:google-api-services-cloudkms:v1-rev71-1.25.0'
     compile 'com.google.cloud:google-cloud-storage:1.53.0'
+    // https://mvnrepository.com/artifact/org.bouncycastle/bcprov-jdk15on
+compile group: 'org.bouncycastle', name: 'bcprov-jdk15on', version: '1.60'
+
 }

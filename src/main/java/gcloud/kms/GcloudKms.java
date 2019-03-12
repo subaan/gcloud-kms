@@ -12,6 +12,8 @@ import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.jackson2.JacksonFactory;
 import com.google.api.services.cloudkms.v1.CloudKMS;
 import com.google.api.services.cloudkms.v1.CloudKMSScopes;
+import com.google.api.services.cloudkms.v1.model.AsymmetricDecryptRequest;
+import com.google.api.services.cloudkms.v1.model.AsymmetricDecryptResponse;
 import com.google.api.services.cloudkms.v1.model.Binding;
 import com.google.api.services.cloudkms.v1.model.CryptoKey;
 import com.google.api.services.cloudkms.v1.model.CryptoKeyVersion;
@@ -26,8 +28,23 @@ import com.google.api.services.cloudkms.v1.model.Policy;
 import com.google.api.services.cloudkms.v1.model.RestoreCryptoKeyVersionRequest;
 import com.google.api.services.cloudkms.v1.model.SetIamPolicyRequest;
 import java.io.IOException;
+import java.io.StringReader;
+import java.security.InvalidKeyException;
+import java.security.KeyFactory;
+import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
+import java.security.PublicKey;
+import java.security.Security;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.Collections;
 import java.util.List;
+import javax.crypto.BadPaddingException;
+import javax.crypto.Cipher;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.NoSuchPaddingException;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.util.io.pem.PemReader;
 
 /**
  *
@@ -50,10 +67,26 @@ public class GcloudKms {
 //
 //        byte[] plainText = decrypt("appranix-dev-07", "global", "dev-key-ring", "crypto-key", decodedCipherText);
 //        System.out.println("Plain text: " + new String(plainText));
-        
 //        destroyCryptoKeyVersion("appranix-dev-07", "global", "test", "quickstart", "1");
 //        restoreCryptoKeyVersion("appranix-dev-07", "global", "test", "quickstart", "1");
 
+//        createAsymmetricKey("asymmetric-signing", "rsa-sign-pss-2048-sha256", "appranix-dev-07", "global", "test", "asymentric-key");
+//          addMemberToCryptoKeyPolicy("appranix-dev-07", "global", "test", "asymentric-key", "user:abdul@appranix.com", "roles/owner");
+//        createAsymmetricKey("ASYMMETRIC_DECRYPT", "RSA_DECRYPT_OAEP_2048_SHA256", "appranix-dev-07", "global", "test", "asymentric-decrypt-key");
+//        addMemberToCryptoKeyPolicy("appranix-dev-07", "global", "test", "asymentric-decrypt-key", "user:abdul@appranix.com", "roles/owner");
+        String encryptKeyPath = String.format(
+                "projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s/cryptoKeyVersions/%s", "appranix-dev-07", "global", "test", "asymentric-decrypt-key", "1");
+        String decryptKeyPath = String.format(
+                "projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s/cryptoKeyVersions/%s", "appranix-dev-07", "global", "test", "asymentric-decrypt-key", "1");
+//        System.out.println("pub: " + getAsymmetricPublicKey(createAuthorizedClient(), keyPath));
+//        
+        String accessKey = "AKIAJCSC2H3IQ6I4Q3GQ";
+        byte[] b = accessKey.getBytes();
+        byte[] decodedCipherText = encryptRSA(b, createAuthorizedClient(), encryptKeyPath);
+        System.out.println("decodedCipherText: " + decodedCipherText);
+//
+        byte[] plainText = decryptRSA(decodedCipherText, createAuthorizedClient(), decryptKeyPath);
+        System.out.println("Plain text: " + new String(plainText));
     }
 
     /**
@@ -131,10 +164,41 @@ public class GcloudKms {
         cryptoKeyVersionTemplate.setAlgorithm("asymmetric-signing");
         cryptoKeyVersionTemplate.setAlgorithm("rsa-sign-pss-2048-sha256");
         cryptoKeyVersionTemplate.setProtectionLevel("software");
-        cryptoKey.setVersionTemplate(cryptoKeyVersionTemplate);  
-       
-//        cryptoKey.setRotationPeriod("30d"); // INTEGER[UNIT], where units can be one of seconds (s), minutes (m), hours (h) or days (d). ex.30d
+        cryptoKey.setVersionTemplate(cryptoKeyVersionTemplate);
 
+//        cryptoKey.setRotationPeriod("30d"); // INTEGER[UNIT], where units can be one of seconds (s), minutes (m), hours (h) or days (d). ex.30d
+        // Create the CryptoKey for your project.
+        CryptoKey createdKey = kms.projects().locations().keyRings().cryptoKeys()
+                .create(parent, cryptoKey)
+                .setCryptoKeyId(cryptoKeyId)
+                .execute();
+
+        System.out.println(createdKey);
+        return createdKey;
+    }
+
+    /**
+     * Creates a new asymmetric key with the given id.
+     */
+    public static CryptoKey createAsymmetricKey(String purpose, String algorithm, String projectId, String locationId, String keyRingId,
+            String cryptoKeyId)
+            throws IOException {
+        // Create the Cloud KMS client.
+        CloudKMS kms = createAuthorizedClient();
+
+        // The resource name of the location associated with the KeyRing.
+        String parent = String.format(
+                "projects/%s/locations/%s/keyRings/%s", projectId, locationId, keyRingId);
+
+        // This will allow the API access to the key for encryption and decryption.
+        CryptoKey cryptoKey = new CryptoKey();
+        cryptoKey.setPurpose(purpose);
+        CryptoKeyVersionTemplate cryptoKeyVersionTemplate = new CryptoKeyVersionTemplate();
+        cryptoKeyVersionTemplate.setAlgorithm(algorithm);
+        cryptoKeyVersionTemplate.setProtectionLevel("software");
+        cryptoKey.setVersionTemplate(cryptoKeyVersionTemplate);
+
+//        cryptoKey.setRotationPeriod("30d"); // INTEGER[UNIT], where units can be one of seconds (s), minutes (m), hours (h) or days (d). ex.30d
         // Create the CryptoKey for your project.
         CryptoKey createdKey = kms.projects().locations().keyRings().cryptoKeys()
                 .create(parent, cryptoKey)
@@ -148,7 +212,7 @@ public class GcloudKms {
     /**
      * Creates a new asymmetric key with the given id.
      */
-    public static CryptoKey createAsymmetricKey(String projectId, String locationId, String keyRingId,
+    public static CryptoKey createAsymmetricDecryptKey(String projectId, String locationId, String keyRingId,
             String cryptoKeyId)
             throws IOException {
         // Create the Cloud KMS client.
@@ -165,10 +229,9 @@ public class GcloudKms {
         CryptoKeyVersionTemplate cryptoKeyVersionTemplate = new CryptoKeyVersionTemplate();
         cryptoKeyVersionTemplate.setAlgorithm("rsa-sign-pss-2048-sha256");
         cryptoKeyVersionTemplate.setProtectionLevel("software");
-        cryptoKey.setVersionTemplate(cryptoKeyVersionTemplate);  
-       
-//        cryptoKey.setRotationPeriod("30d"); // INTEGER[UNIT], where units can be one of seconds (s), minutes (m), hours (h) or days (d). ex.30d
+        cryptoKey.setVersionTemplate(cryptoKeyVersionTemplate);
 
+//        cryptoKey.setRotationPeriod("30d"); // INTEGER[UNIT], where units can be one of seconds (s), minutes (m), hours (h) or days (d). ex.30d
         // Create the CryptoKey for your project.
         CryptoKey createdKey = kms.projects().locations().keyRings().cryptoKeys()
                 .create(parent, cryptoKey)
@@ -177,6 +240,38 @@ public class GcloudKms {
 
         System.out.println(createdKey);
         return createdKey;
+    }
+
+    /**
+     * Retrieves the public key from a saved asymmetric key pair on Cloud KMS
+     *
+     * Requires: java.io.StringReader java.security.KeyFactory
+     * java.security.PublicKey java.security.Security
+     * java.security.spec.X509EncodedKeySpec
+     * org.bouncycastle.jce.provider.BouncyCastleProvider
+     * org.bouncycastle.util.io.pem.PemReader
+     */
+    public static PublicKey getAsymmetricPublicKey(CloudKMS client, String keyPath)
+            throws IOException, NoSuchAlgorithmException, InvalidKeySpecException,
+            NoSuchProviderException {
+        Security.addProvider(new BouncyCastleProvider());
+        com.google.api.services.cloudkms.v1.model.PublicKey response;
+
+        response = client.projects()
+                .locations()
+                .keyRings()
+                .cryptoKeys()
+                .cryptoKeyVersions()
+                .getPublicKey(keyPath) //Key version
+                .execute();
+        PemReader reader = new PemReader(new StringReader(response.getPem()));
+        byte[] pem = reader.readPemObject().getContent();
+        X509EncodedKeySpec abstractKey = new X509EncodedKeySpec(pem);
+        try {
+            return KeyFactory.getInstance("RSA", "BC").generatePublic(abstractKey);
+        } catch (InvalidKeySpecException e) {
+            return KeyFactory.getInstance("ECDSA", "BC").generatePublic(abstractKey);
+        }
     }
 
     /**
@@ -220,6 +315,42 @@ public class GcloudKms {
                 .decrypt(cryptoKeyName, request)
                 .execute();
 
+        return response.decodePlaintext();
+    }
+
+    /**
+     * Encrypt data locally using an 'RSA_DECRYPT_OAEP_2048_SHA256' public key
+     * retrieved from Cloud KMS
+     *
+     * Requires: java.security.PublicKey java.security.Security
+     * javax.crypto.Cipher org.bouncycastle.jce.provider.BouncyCastleProvider
+     */
+    public static byte[] encryptRSA(byte[] plaintext, CloudKMS client, String keyPath)
+            throws IOException, IllegalBlockSizeException, NoSuchPaddingException,
+            InvalidKeySpecException, NoSuchProviderException, BadPaddingException,
+            NoSuchAlgorithmException, InvalidKeyException {
+        Security.addProvider(new BouncyCastleProvider());
+        PublicKey rsaKey = getAsymmetricPublicKey(client, keyPath);
+
+        Cipher cipher = Cipher.getInstance("RSA/NONE/OAEPWITHSHA256ANDMGF1PADDING", "BC");
+        cipher.init(Cipher.ENCRYPT_MODE, rsaKey);
+        return cipher.doFinal(plaintext);
+    }
+    
+    /**
+     * Decrypt a given ciphertext using an 'RSA_DECRYPT_OAEP_2048_SHA256'
+     * private key stored on Cloud KMS
+     */
+    public static byte[] decryptRSA(byte[] ciphertext, CloudKMS client, String keyPath)
+            throws IOException {
+        AsymmetricDecryptRequest request = new AsymmetricDecryptRequest().encodeCiphertext(ciphertext);
+        AsymmetricDecryptResponse response = client.projects()
+                .locations()
+                .keyRings()
+                .cryptoKeys()
+                .cryptoKeyVersions()
+                .asymmetricDecrypt(keyPath, request)
+                .execute();
         return response.decodePlaintext();
     }
 
